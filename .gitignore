@@ -1,0 +1,7 @@
+sdl.so
+sdl.dylib
+sdl.dll
+*.wad
+freedoom-0.13.0.zip
+freedoom-0.13.0/
+*.ppm
