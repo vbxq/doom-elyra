@@ -212,6 +212,7 @@ pub fn run_interactive(tick: fn() -> (), present: fn() -> bool) {
     let t0 = clock()
     let mut quit = false
     let mut frames = 0
+    let mut next_frame_us = 0
     while !quit {
         let due = (time::elapsed(t0) * 35.0) as int
         let mut steps = 0
@@ -227,7 +228,13 @@ pub fn run_interactive(tick: fn() -> (), present: fn() -> bool) {
         draw_view()
         frames++
         if !present() { quit = true }
-        time::sleep(1)
+        next_frame_us += 16667
+        let now_us = time::elapsed_us(t0)
+        if next_frame_us > now_us {
+            time::sleep_us(next_frame_us - now_us)
+        } else {
+            next_frame_us = now_us
+        }
     }
     println("interactive tics {tics} frames {frames} wall {ms_since(t0)} ms")
     println("final fixed {play::player_x()} {play::player_y()} {play::player_z()} {play::player_angle()}")

@@ -9,3 +9,5 @@ Use `--demo` for the automatic realtime route, or `--timedemo` to replay it as f
 Keyboard smoke tests on Xvfb `:99`: `python3 tests/keyboard_smoke.py --aelys /path/to/aelys-cli` (requires xdotool), and `python3 tests/commands_smoke.py --aelys /path/to/aelys-cli`.
 
 The launcher uses a 64 KiB GC nursery to reduce minor-collection work per pause. This is a Doom launch setting, not a hard real-time guarantee for the VM. Interactive mode keeps no per-frame history; demo modes retain their measurement history.
+
+Interactive rendering is paced at 60 frames per second. Player simulation runs at 35 tics per second; movement is not interpolated between tics. Check pacing with `python3 tests/frame_pacing_smoke.py --aelys /path/to/aelys-cli`.
