@@ -6,10 +6,10 @@ import subprocess
 import time
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--aelys', required=True)
+parser.add_argument('--elyra', '--aelys', dest='elyra', required=True)
 args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent
-proc = subprocess.Popen([args.aelys, 'run', '-ae.gc-nursery=64K', str(root / 'doom.aelys'), '--scale', '1'], cwd=root, env=dict(os.environ, DISPLAY=':99', SDL_AUDIODRIVER='dummy'), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+proc = subprocess.Popen([args.elyra, 'run', '-ae.gc-nursery=64K', str(root / 'doom.elyra'), '--scale', '1'], cwd=root, env=dict(os.environ, DISPLAY=':99', SDL_AUDIODRIVER='dummy'), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 try:
     time.sleep(4)
     assert proc.poll() is None, proc.stdout.read()

@@ -2,17 +2,17 @@
 set -eu
 cd "$(dirname "$0")"
 
-if [ -n "${AELYS:-}" ]; then
-    cli="$AELYS"
+if [ -n "${ELYRA_BIN:-${AELYS:-}}" ]; then
+    cli="${ELYRA_BIN:-$AELYS}"
 else
-    : "${ELYRA:?set ELYRA to the path of an Elyra checkout, or AELYS to an existing CLI}"
+    : "${ELYRA:?set ELYRA to the path of an Elyra checkout, or ELYRA_BIN to an existing elyra binary}"
     target="${CARGO_TARGET_DIR:-$ELYRA/target}"
     exe=""
     case "$(uname -s)" in
         MINGW* | MSYS* | CYGWIN*) exe=.exe ;;
     esac
     cargo build --release --manifest-path "$ELYRA/Cargo.toml" -p aelys-cli --target-dir "$target"
-    cli="$target/release/aelys-cli$exe"
+    cli="$target/release/elyra$exe"
 fi
 
 if [ ! -f freedoom1.wad ]; then
@@ -26,4 +26,4 @@ if [ ! -f freedoom1.wad ]; then
     rm -f freedoom-0.13.0.zip
 fi
 
-exec "$cli" run -ae.gc-nursery=64K -ae.jit=on doom.aelys "$@"
+exec "$cli" run -ae.gc-nursery=64K -ae.jit=on doom.elyra "$@"

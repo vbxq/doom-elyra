@@ -6,14 +6,14 @@ import subprocess
 import time
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--aelys', required=True)
+parser.add_argument('--elyra', '--aelys', dest='elyra', required=True)
 parser.add_argument('--jit', action='store_true')
 args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent
 env = dict(os.environ, DISPLAY=':99', SDL_AUDIODRIVER='dummy')
 
 def run(keys, mouse=0):
-    proc = subprocess.Popen([args.aelys, 'run', *(['-ae.jit=on'] if args.jit else []), str(root / 'doom.aelys'), '--scale', '1'], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    proc = subprocess.Popen([args.elyra, 'run', *(['-ae.jit=on'] if args.jit else []), str(root / 'doom.elyra'), '--scale', '1'], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:
         window = None
         for _ in range(100):
