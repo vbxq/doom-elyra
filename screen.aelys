@@ -41,6 +41,7 @@ let mut texture = ptr::null()
 let mut indexed = ptr::null()
 let mut argb = ptr::null()
 let mut event: Vec<u8> = vec![0; 64]
+let mut keys: Vec<bool> = vec![false; 512]
 
 fn failed(what: string) -> Result<(), string> {
     Err("{what}: {SDL_GetError()}")
@@ -81,9 +82,19 @@ pub fn present() -> bool {
     SDL_RenderPresent(renderer)
     let mut quit = false
     while SDL_PollEvent(&mut event) != 0 {
-        if event.read_u32_le(0) == SDL_QUIT as int { quit = true }
+        let kind = event.read_u32_le(0)
+        if kind == SDL_QUIT as int { quit = true }
+        if kind == 0x300 || kind == 0x301 {
+            let scancode = event.read_i32_le(16)
+            if scancode >= 0 && scancode < keys.len() {
+                keys[scancode] = kind == 0x300
+            }
+        }
+        if kind == 0x200 && event[12] == 13 {
+            for i in 0..keys.len() { keys[i] = false }
+        }
     }
-    shown && !quit
+    shown && !quit && !keys[41]
 }
 
 pub fn close() {
@@ -94,3 +105,19 @@ pub fn close() {
     SDL_DestroyWindow(window)
     SDL_Quit()
 }
+
+pub fn forward() -> int {
+    let speed = if keys[225] || keys[229] { 50 } else { 25 }
+    (if keys[26] || keys[82] { speed } else { 0 }) - (if keys[22] || keys[81] { speed } else { 0 })
+}
+
+pub fn sideways() -> int {
+    let speed = if keys[225] || keys[229] { 40 } else { 24 }
+    (if keys[7] { speed } else { 0 }) - (if keys[4] { speed } else { 0 })
+}
+
+pub fn turn() -> int {
+    (if keys[80] { 640 } else { 0 }) - (if keys[79] { 640 } else { 0 })
+}
+
+pub fn using() -> bool { keys[8] || keys[44] }

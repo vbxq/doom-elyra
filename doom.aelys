@@ -2,6 +2,11 @@ use std::sys
 use std::io::{println}
 use screen
 use engine
+use play
+
+fn keyboard_tic() {
+    play::tic(screen::forward(), screen::sideways(), screen::turn(), screen::using())
+}
 
 let wad_path = engine::flag_value("--wad", "freedoom1.wad")
 let g = engine::load(wad_path)
@@ -18,7 +23,9 @@ match screen::open("Elyra E1M1", g.playpal, scale) {
 }
 if engine::has_flag("--timedemo") {
     engine::run_timedemo(screen::present)
-} else {
+} else if engine::has_flag("--demo") {
     engine::run_realtime(screen::present)
+} else {
+    engine::run_interactive(keyboard_tic, screen::present)
 }
 screen::close()

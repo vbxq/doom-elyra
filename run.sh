@@ -22,4 +22,4 @@ if [ ! -f freedoom1.wad ]; then
     rm -f freedoom-0.13.0.zip
 fi
 
-exec "$target/release/aelys-cli$exe" run doom.aelys "$@"
+exec "$target/release/aelys-cli$exe" run -ae.gc-nursery=64K doom.aelys "$@"
