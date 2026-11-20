@@ -8,6 +8,8 @@ use fixed
 use render
 use play
 use demo
+use camera
+use combat
 
 let mut pal: Vec<int> = vec![0]
 let mut snap_dir = ""
@@ -24,6 +26,9 @@ let mut next_mark = 1.0
 let mut snap_ms = 0.0
 let mut print_sectors = false
 let mut last_sector = -1
+let mut gameplay_enabled = false
+
+pub fn enable_gameplay() { gameplay_enabled = true }
 
 fn arg_at(i: int) -> string {
     match sys::arg(i) {
@@ -65,11 +70,12 @@ pub fn load(path: string) -> Graphics {
     let mut level = map::load_level(w, "E1M1")
     let g = gfx::load_graphics(w)
     let skill = skill_from_args()
-    let nomonsters = !has_flag("--monsters")
+    let nomonsters = if gameplay_enabled { has_flag("--nomonsters") } else { !has_flag("--monsters") }
     render::set_skill_bit(skill)
     render::set_no_monsters(nomonsters)
     render::setup(w, g, level)
     play::init_level(level, skill, nomonsters)
+    if gameplay_enabled { combat::init(w, level, skill, nomonsters) }
     pal = render::palette_rgb(g)
     snaps = has_flag("--snaps")
     snap_dir = flag_value("--snapdir", ".")
@@ -207,9 +213,10 @@ pub fn run_realtime(present: fn() -> bool) {
     report(ms_since(t0))
 }
 
-pub fn run_interactive(tick: fn() -> (), present: fn() -> bool) {
-    println("Controls: WASD/ZQSD move, arrows turn, Shift run, E/Space use, Escape quit")
+pub fn run_interactive(tick: fn() -> (), look: fn() -> int, present: fn() -> bool) {
+    println("Controls: WASD/ZQSD move, mouse/arrows aim, Ctrl/left mouse fire, Shift run, E/Space use, R restart after death, Escape quit")
     let t0 = clock()
+    camera::begin_tic()
     let mut quit = false
     let mut frames = 0
     let mut next_frame_us = 0
@@ -218,6 +225,7 @@ pub fn run_interactive(tick: fn() -> (), present: fn() -> bool) {
         let mut steps = 0
         while tics < due && steps < 8 {
             let t = clock()
+            camera::begin_tic()
             tick()
             let ms = ms_since(t)
             tic_ms_total += ms
@@ -225,7 +233,13 @@ pub fn run_interactive(tick: fn() -> (), present: fn() -> bool) {
             tics++
             steps++
         }
-        draw_view()
+        camera::look(look())
+        let elapsed = time::elapsed_us(t0)
+        let mut fraction = (elapsed * 35 - tics * 1000000) * 65536 / 1000000
+        if fraction < 0 { fraction = 0 }
+        if fraction > 65536 { fraction = 65536 }
+        camera::draw(fraction)
+        if gameplay_enabled { combat::draw_hud() }
         frames++
         if !present() { quit = true }
         next_frame_us += 16667
@@ -238,5 +252,6 @@ pub fn run_interactive(tick: fn() -> (), present: fn() -> bool) {
     }
     println("interactive tics {tics} frames {frames} wall {ms_since(t0)} ms")
     println("final fixed {play::player_x()} {play::player_y()} {play::player_z()} {play::player_angle()}")
+    if gameplay_enabled { println("combat health {combat::health()} ammo {combat::ammo()} kills {combat::kills()}") }
     println("trymoves {play::moves_count()} slides {play::slide_count()}")
 }

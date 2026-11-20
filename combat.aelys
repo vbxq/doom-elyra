@@ -1,0 +1,270 @@
+use std::io::{println}
+use std::time as time
+use wad
+use fixed
+use play
+use render
+use sound
+
+let mut xs: Vec<int> = vec![]
+let mut ys: Vec<int> = vec![]
+let mut zs: Vec<int> = vec![]
+let mut hp: Vec<int> = vec![]
+let mut types: Vec<int> = vec![]
+let mut awake: Vec<bool> = vec![]
+let mut actor_ids: Vec<int> = vec![]
+let mut solids: Vec<int> = vec![]
+let mut delays: Vec<int> = vec![]
+let mut walking: Vec<int> = vec![]
+let mut resting: Vec<int> = vec![]
+let mut corpses: Vec<int> = vec![]
+let mut pickup_x: Vec<int> = vec![]
+let mut pickup_y: Vec<int> = vec![]
+let mut pickup_kind: Vec<int> = vec![]
+let mut pickup_actor: Vec<int> = vec![]
+let mut armor_points = 0
+let mut armor_kind = 1
+let mut font: Vec<Picture> = vec![]
+let mut player_health = 100
+let mut bullets = 50
+let mut killed = 0
+let mut clock_tic = 0
+let mut cooldown = 0
+let mut flash = 0
+let mut hurt = 0
+let mut gun: Vec<Picture> = vec![]
+let mut digits: Vec<Picture> = vec![]
+let mut bar: Vec<Picture> = vec![]
+let anim_clock = time::timer()
+
+fn abs(v: int) -> int { if v < 0 { -v } else { v } }
+pub fn health() -> int { player_health }
+pub fn ammo() -> int { bullets }
+pub fn armor() -> int { armor_points }
+pub fn kills() -> int { killed }
+pub fn enemy_health(i: int) -> int { hp[i] }
+pub fn enemy_x(i: int) -> int { xs[i] }
+pub fn enemy_y(i: int) -> int { ys[i] }
+pub fn enemy_z(i: int) -> int { zs[i] }
+pub fn alive() -> int {
+    let mut count = 0
+    for h in hp { if h > 0 { count++ } }
+    count
+}
+pub fn reset() {
+    xs = vec![]; ys = vec![]; zs = vec![]; hp = vec![]; awake = vec![]; types = vec![]
+    actor_ids = vec![]; solids = vec![]; delays = vec![]
+    walking = vec![]; resting = vec![]; corpses = vec![]
+    player_health = 100; bullets = 50; killed = 0
+    clock_tic = 0; cooldown = 0; flash = 0; hurt = 0
+    armor_points = 0; armor_kind = 1
+    pickup_x = vec![]; pickup_y = vec![]; pickup_kind = vec![]; pickup_actor = vec![]
+}
+pub fn spawn(x: int, y: int, z: int, kind: int, actor: int, solid: int) -> int {
+    let i = hp.len()
+    xs.push(x); ys.push(y); zs.push(z)
+    hp.push(if kind == 3004 { 20 } else if kind == 9 { 30 } else if kind == 3001 { 60 } else { 150 })
+    types.push(kind)
+    awake.push(false)
+    actor_ids.push(actor); solids.push(solid); delays.push(20 + i % 20)
+    walking.push(-1); resting.push(-1); corpses.push(-1)
+    i
+}
+fn monster(kind: int) -> bool {
+    kind == 3004 || kind == 9 || kind == 3001 || kind == 3002 || kind == 58 || kind == 3006 || kind == 3005 || kind == 3003 || kind == 16 || kind == 7
+}
+fn prefix(kind: int) -> string {
+    match kind { 3004 => "POSS", 9 => "SPOS", 3001 => "TROO", 3002 => "SARG", 58 => "SARG", 3006 => "SKUL", 3005 => "HEAD", 3003 => "BOSS", 16 => "CYBR", _ => "SPID" }
+}
+pub fn init(w: Wad, level: Level, skill: int, nomonsters: bool) {
+    reset()
+    sound::load(w)
+    gun = vec![render::picture(w, "PISGA0"), render::picture(w, "PISGB0"), render::picture(w, "PISFA0")]
+    bar = vec![render::picture(w, "STBAR")]
+    digits = vec![]
+    for n in 0..10 { digits.push(render::picture(w, "STTNUM{n}")) }
+    font = vec![]
+    for ch in 32..96 {
+        let code = if ch < 100 { "0{ch}" } else { "{ch}" }
+        font.push(render::picture(w, "STCFN{code}"))
+    }
+    for t in level.things {
+        if (t.flags & 16) != 0 || (t.flags & skill) == 0 { continue }
+        if t.kind == 2007 || t.kind == 2048 || t.kind == 2011 || t.kind == 2012 || t.kind == 2013 || t.kind == 2014 || t.kind == 2015 || t.kind == 2018 || t.kind == 2019 {
+            let x = t.x << 16
+            let y = t.y << 16
+            pickup_x.push(x); pickup_y.push(y); pickup_kind.push(t.kind)
+            pickup_actor.push(render::actor_at(x, y))
+        }
+    }
+    let mut kind_walk: Vec<int> = vec![-2; 4096]
+    let mut kind_rest: Vec<int> = vec![-2; 4096]
+    let mut kind_dead: Vec<int> = vec![-2; 4096]
+    if nomonsters { return () }
+    for t in level.things {
+        if !monster(t.kind) || (t.flags & 16) != 0 || (t.flags & skill) == 0 { continue }
+        let x = t.x << 16
+        let y = t.y << 16
+        let z = play::sector_floor(play::sector_at(x, y))
+        let i = spawn(x, y, z, t.kind, render::actor_at(x, y), play::solid_at(x, y))
+        let k = t.kind
+        if kind_walk[k] == -2 {
+            let name = prefix(k)
+            kind_rest[k] = render::sprite_definition(w, name, 0)
+            kind_walk[k] = render::sprite_definition(w, name, 1)
+            let death = if k == 3004 || k == 9 { 11 } else if k == 3001 { 12 } else { 13 }
+            kind_dead[k] = render::sprite_definition(w, name, death)
+        }
+        walking[i] = kind_walk[k]; resting[i] = kind_rest[k]; corpses[i] = kind_dead[k]
+    }
+    println("combat: {hp.len()} enemies, pistol, 50 bullets; Ctrl/left mouse fires, R restarts after death")
+}
+pub fn shoot(x: int, y: int, z: int, angle: int) -> bool {
+    let f = (angle & 0xFFFFFFFF) >> 19
+    let cs = fixed::finesine[f + 2048]
+    let sn = fixed::finesine[f]
+    let mut target = -1
+    let mut nearest = 2048
+    for i in 0..hp.len() {
+        if hp[i] <= 0 { continue }
+        let dx = (xs[i] - x) >> 16
+        let dy = (ys[i] - y) >> 16
+        let along = (dx * cs + dy * sn) >> 16
+        let side = abs((-dx * sn + dy * cs) >> 16)
+        if along <= 0 || along >= nearest || side > 20 { continue }
+        let target_z = zs[i] + (32 << 16)
+        if abs(target_z - z) > (128 << 16) { continue }
+        if !play::visible(x, y, z, xs[i], ys[i], target_z) { continue }
+        nearest = along; target = i
+    }
+    if target < 0 { return false }
+    hp[target] -= 15
+    if hp[target] <= 0 {
+        killed++
+        play::remove_solid(solids[target])
+        render::actor_frame(actor_ids[target], corpses[target])
+    }
+    true
+}
+pub fn tick(fire: bool) {
+    clock_tic++
+    if cooldown > 0 { cooldown-- }
+    if flash > 0 { flash-- }
+    if hurt > 0 { hurt-- }
+    if player_health <= 0 { return () }
+    if fire && cooldown == 0 && bullets > 0 {
+        bullets--; cooldown = 8; flash = 3
+        let _ = sound::play(0)
+        let _ = shoot(play::player_x(), play::player_y(), play::player_viewz(), play::player_angle())
+    }
+    collect_pickups()
+    for i in 0..hp.len() {
+        if hp[i] <= 0 { continue }
+        if delays[i] > 0 { delays[i]-- }
+        let dx = (play::player_x() - xs[i]) >> 16
+        let dy = (play::player_y() - ys[i]) >> 16
+        let distance = if abs(dx) > abs(dy) { abs(dx) } else { abs(dy) }
+        if distance > 768 { awake[i] = false; continue }
+        if (clock_tic + i) % 4 == 0 {
+            awake[i] = play::visible(xs[i], ys[i], zs[i] + (32 << 16), play::player_x(), play::player_y(), play::player_viewz())
+        }
+        if !awake[i] { continue }
+        let angle = play::angle_to(dx << 16, dy << 16)
+        let reach = if types[i] == 3002 || types[i] == 58 || types[i] == 3006 { 64 } else { 512 }
+        if distance < reach && delays[i] == 0 {
+            let mut absorbed = if armor_kind == 2 { 3 } else { 1 }
+            if absorbed > armor_points { absorbed = armor_points }
+            armor_points -= absorbed
+            player_health -= 5 - absorbed
+            if player_health < 0 { player_health = 0 }
+            hurt = 5; delays[i] = 35 + i % 20
+            let _ = sound::play(if player_health == 0 { 2 } else { 1 })
+            if player_health == 0 { println("You died. Press R to restart.") }
+        }
+        if distance > 48 {
+            let step_x = dx * (3 << 15) / distance
+            let step_y = dy * (3 << 15) / distance
+            let nx = xs[i] + step_x
+            let ny = ys[i] + step_y
+            if play::move_solid(solids[i], nx, ny, zs[i]) {
+                xs[i] = nx; ys[i] = ny
+                zs[i] = play::sector_floor(play::sector_at(nx, ny))
+            }
+        }
+        render::move_actor(actor_ids[i], xs[i], ys[i], zs[i], angle)
+        render::actor_frame(actor_ids[i], if (clock_tic / 8) % 2 == 0 { walking[i] } else { resting[i] })
+    }
+}
+fn number(value: int, right: int, top: int) {
+    let mut n = value
+    let mut x = right
+    loop {
+        let pic = digits[n % 10]
+        x -= pic.width
+        render::overlay(pic, x, top)
+        n /= 10
+        if n == 0 { break }
+    }
+}
+pub fn draw_hud() {
+    if gun.len() == 0 { return () }
+    let weapon = gun[if flash > 0 { 1 } else { 0 }]
+    let moving = abs(play::player_momx()) + abs(play::player_momy()) > 65536
+    let phase = ((time::elapsed(anim_clock) * 8192.0) as int) & 8191
+    let bob = if moving { fixed::finesine[phase] * 3 >> 16 } else { 0 }
+    render::overlay(weapon, -weapon.left + bob, -weapon.top)
+    if flash > 0 { let light = gun[2]; render::overlay(light, -light.left + bob, -light.top) }
+    render::overlay(bar[0], 0, 168)
+    number(bullets, 44, 171)
+    number(player_health, 90, 171)
+    number(armor_points, 221, 171)
+    text("KILLS", 251, 5)
+    number(killed, 318, 5)
+    render::crosshair()
+    if hurt > 0 || player_health == 0 { render::damage_flash() }
+    if player_health == 0 { text("YOU DIED", 124, 75); text("PRESS R TO RESTART", 87, 88) }
+}
+
+fn text(label: string, left: int, top: int) {
+    let mut x = left
+    for i in 0..label.len() {
+        let code = label.byte_at(i)
+        if code == 32 { x += 4; continue }
+        if code >= 32 && code < 96 {
+            let pic = font[code - 32]
+            render::overlay(pic, x, top)
+            x += pic.width
+        }
+    }
+}
+pub fn pickup(kind: int) -> bool {
+    if kind == 2007 || kind == 2048 {
+        if bullets >= 200 { return false }
+        bullets += if kind == 2007 { 10 } else { 50 }
+        if bullets > 200 { bullets = 200 }
+        return true
+    }
+    if kind == 2011 || kind == 2012 || kind == 2013 || kind == 2014 {
+        let limit = if kind == 2013 || kind == 2014 { 200 } else { 100 }
+        if player_health >= limit { return false }
+        player_health += if kind == 2011 { 10 } else if kind == 2012 { 25 } else if kind == 2013 { 100 } else { 1 }
+        if player_health > limit { player_health = limit }
+        return true
+    }
+    if kind == 2015 || kind == 2018 || kind == 2019 {
+        let target = if kind == 2018 { 100 } else { 200 }
+        if armor_points >= target { return false }
+        if kind == 2015 { armor_points++ } else { armor_points = target; armor_kind = if kind == 2019 { 2 } else { 1 } }
+        return true
+    }
+    false
+}
+fn collect_pickups() {
+    for i in 0..pickup_kind.len() {
+        if pickup_kind[i] == 0 { continue }
+        if abs(play::player_x() - pickup_x[i]) > (20 << 16) || abs(play::player_y() - pickup_y[i]) > (20 << 16) { continue }
+        let z = play::sector_floor(play::sector_at(pickup_x[i], pickup_y[i]))
+        if abs(z - play::player_z()) > (24 << 16) { continue }
+        if pickup(pickup_kind[i]) { pickup_kind[i] = 0; render::hide_actor(pickup_actor[i]) }
+    }
+}

@@ -1,0 +1,29 @@
+use play
+use render
+
+let mut old_x = 0
+let mut old_y = 0
+let mut old_z = 0
+let mut old_angle = 0
+
+pub fn blend(a: int, b: int, fraction: int) -> int { a + (b - a).mul_shr(fraction, 16) }
+pub fn blend_angle(a: int, b: int, fraction: int) -> int {
+    let mut delta = (b - a) & 0xFFFFFFFF
+    if delta >= 0x80000000 { delta -= 0x100000000 }
+    (a + delta.mul_shr(fraction, 16)) & 0xFFFFFFFF
+}
+pub fn begin_tic() {
+    render::begin_tic()
+    old_x = play::player_x()
+    old_y = play::player_y()
+    old_z = play::player_viewz()
+    old_angle = play::player_angle()
+}
+pub fn look(delta: int) {
+    play::turn_view(delta)
+    old_angle = (old_angle + delta) & 0xFFFFFFFF
+}
+pub fn draw(fraction: int) {
+    render::set_interpolation(fraction)
+    render::render_frame(blend(old_x, play::player_x(), fraction), blend(old_y, play::player_y(), fraction), blend(old_z, play::player_viewz(), fraction), blend_angle(old_angle, play::player_angle(), fraction))
+}

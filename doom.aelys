@@ -3,10 +3,22 @@ use std::io::{println}
 use screen
 use engine
 use play
+use camera
+use combat
 
 fn keyboard_tic() {
+    if combat::health() == 0 {
+        if screen::restarting() {
+            let g = engine::load(engine::flag_value("--wad", "freedoom1.wad"))
+            camera::begin_tic()
+        }
+        return ()
+    }
     play::tic(screen::forward(), screen::sideways(), screen::turn(), screen::using())
+    combat::tick(screen::firing())
 }
+
+if !engine::has_flag("--demo") && !engine::has_flag("--timedemo") { engine::enable_gameplay() }
 
 let wad_path = engine::flag_value("--wad", "freedoom1.wad")
 let g = engine::load(wad_path)
@@ -26,6 +38,7 @@ if engine::has_flag("--timedemo") {
 } else if engine::has_flag("--demo") {
     engine::run_realtime(screen::present)
 } else {
-    engine::run_interactive(keyboard_tic, screen::present)
+    let _ = screen::capture_mouse()
+    engine::run_interactive(keyboard_tic, screen::look_delta, screen::present)
 }
 screen::close()

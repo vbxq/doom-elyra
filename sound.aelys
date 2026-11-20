@@ -1,0 +1,43 @@
+use wad
+extern "SDL2" {
+    fn SDL_InitSubSystem(flags: u32) -> i32
+    fn SDL_OpenAudioDevice(name: ptr, capture: i32, desired: &[u8], obtained: &mut [u8], changes: i32) -> u32
+    fn SDL_PauseAudioDevice(device: u32, pause: i32)
+    fn SDL_ClearQueuedAudio(device: u32)
+    fn SDL_QueueAudio(device: u32, data: &[u8], length: u32) -> i32
+}
+let mut device: u32 = 0
+let mut effects: Vec<Vec<u8>> = vec![]
+let mut sample_rate = 22050
+fn samples(w: Wad, name: string) -> Vec<u8> {
+    let index = w.find_lump(name)
+    if index < 0 { return vec![] }
+    let lump = w.lumps[index]
+    if lump.size < 40 || w.buf.read_u16_le(lump.filepos) != 3 { return vec![] }
+    let rate = w.buf.read_u16_le(lump.filepos + 2)
+    if rate < 1000 || rate > 192000 { return vec![] }
+    let count = w.buf.read_u32_le(lump.filepos + 4)
+    if count < 32 || count > lump.size - 8 { return vec![] }
+    let mut data: Vec<u8> = vec![128; (count - 32) * sample_rate / rate]
+    for i in 0..data.len() { data[i] = w.buf.read_u8(lump.filepos + 24 + i * rate / sample_rate) as u8 }
+    data
+}
+pub fn load(w: Wad) {
+    effects = vec![samples(w, "DSPISTOL"), samples(w, "DSPLPAIN"), samples(w, "DSPLDETH")]
+    if device != 0 || SDL_InitSubSystem(0x10) != 0 { return () }
+    let mut desired: Vec<u8> = vec![0; 32]
+    let mut obtained: Vec<u8> = vec![0; 32]
+    desired.write_i32_le(0, sample_rate)
+    desired.write_u16_le(4, 8)
+    desired[6] = 1
+    desired.write_u16_le(8, 512)
+    device = SDL_OpenAudioDevice(ptr::null(), 0, &desired, &mut obtained, 0)
+    if device != 0 { SDL_PauseAudioDevice(device, 0) }
+}
+pub fn play(effect: int) -> bool {
+    if device == 0 || effect < 0 || effect >= effects.len() { return false }
+    let data = effects[effect]
+    if data.len() == 0 { return false }
+    SDL_ClearQueuedAudio(device)
+    SDL_QueueAudio(device, &data, data.len() as u32) == 0
+}

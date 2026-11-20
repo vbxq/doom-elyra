@@ -15,6 +15,7 @@ extern "SDL2" {
     fn SDL_RenderCopy(renderer: ptr, texture: ptr, src: ptr, dst: ptr) -> i32
     fn SDL_RenderPresent(renderer: ptr)
     fn SDL_PollEvent(event: &mut [u8]) -> i32
+    fn SDL_SetRelativeMouseMode(enabled: i32) -> i32
     fn SDL_FreeSurface(surface: ptr)
     fn SDL_DestroyTexture(texture: ptr)
     fn SDL_DestroyRenderer(renderer: ptr)
@@ -33,6 +34,7 @@ let SDL_WINDOWPOS_CENTERED = 0x2FFF0000
 let SDL_PIXELFORMAT_INDEX8: u32 = 0x13000801
 let SDL_PIXELFORMAT_ARGB8888: u32 = 0x16362004
 let SDL_TEXTUREACCESS_STREAMING = 1
+let SDL_RENDERER_SOFTWARE: u32 = 1
 let SDL_QUIT: u32 = 0x100
 
 let mut window = ptr::null()
@@ -42,6 +44,8 @@ let mut indexed = ptr::null()
 let mut argb = ptr::null()
 let mut event: Vec<u8> = vec![0; 64]
 let mut keys: Vec<bool> = vec![false; 512]
+let mut mouse_x = 0
+let mut mouse_fire = false
 
 fn failed(what: string) -> Result<(), string> {
     Err("{what}: {SDL_GetError()}")
@@ -51,9 +55,10 @@ fn failed(what: string) -> Result<(), string> {
 pub fn open(title: string, playpal: Vec<int>, scale: int) -> Result<(), string> {
     if SDL_Init(SDL_INIT_VIDEO) != 0 { return failed("SDL_Init") }
     SDL_SetHint("SDL_RENDER_SCALE_QUALITY", "0")
+    SDL_SetHint("SDL_FRAMEBUFFER_ACCELERATION", "0")
     window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W * scale, H * scale, 0)
     if window.is_null() { return failed("SDL_CreateWindow") }
-    renderer = SDL_CreateRenderer(window, -1, 0)
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE)
     if renderer.is_null() { return failed("SDL_CreateRenderer") }
     texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, W, H)
     if texture.is_null() { return failed("SDL_CreateTexture") }
@@ -90,7 +95,11 @@ pub fn present() -> bool {
                 keys[scancode] = kind == 0x300
             }
         }
+        if kind == 0x400 { mouse_x += event.read_i32_le(28) }
+        if (kind == 0x401 || kind == 0x402) && event[16] == 1 { mouse_fire = kind == 0x401 }
         if kind == 0x200 && event[12] == 13 {
+            mouse_fire = false
+            mouse_x = 0
             for i in 0..keys.len() { keys[i] = false }
         }
     }
@@ -121,3 +130,8 @@ pub fn turn() -> int {
 }
 
 pub fn using() -> bool { keys[8] || keys[44] }
+
+pub fn capture_mouse() -> bool { SDL_SetRelativeMouseMode(1) == 0 }
+pub fn look_delta() -> int { let x = mouse_x; mouse_x = 0; -x * 2097152 }
+pub fn firing() -> bool { mouse_fire || keys[224] || keys[228] }
+pub fn restarting() -> bool { keys[21] }

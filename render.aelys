@@ -39,15 +39,20 @@ let mut sub_sector: Vec<int> = vec![]
 let mut num_nodes = 0
 let mut tex_pics: Vec<Picture> = vec![]
 let mut tex_heights: Vec<int> = vec![]
-let mut flat_pix: Vec<Vec<int>> = vec![]
+let mut flat_pix: Vec<Vec<u8>> = vec![]
 let mut lit_flats: Vec<Vec<u8>> = vec![]
 let mut sky_lit: Vec<Vec<u8>> = vec![]
 let mut sky_flat = -1
 let mut sky_tex = 0
 let mut actors: Vec<Actor> = vec![]
+let mut actor_old_x: Vec<int> = vec![]
+let mut actor_old_y: Vec<int> = vec![]
+let mut actor_old_z: Vec<int> = vec![]
+let mut interpolation = 65536
 let mut sector_actors: Vec<Vec<int>> = vec![]
 let mut sprite_defs: Vec<SpriteDef> = vec![]
 let mut sprite_pics: Vec<Picture> = vec![]
+let mut sprite_lump_cache: Vec<int> = vec![]
 let mut scalelight: Vec<int> = vec![0; 768]
 let mut zlight: Vec<int> = vec![0; 2048]
 let mut yslope: Vec<int> = vec![0; 200]
@@ -207,7 +212,7 @@ fn texture_num(slots: Vec<int>, names: Vec<string>, name: string) -> int {
 }
 
 fn empty_picture() -> Picture {
-    let col: Vec<int> = vec![0; 17]
+    let col: Vec<u8> = vec![0; 17]
     Picture { width: 1, height: 1, left: 0, top: 0, widthmask: 0, heightmask: 0, cols: vec![col], mcols: vec![col], colpost: vec![0], posts: vec![-1] }
 }
 
@@ -217,7 +222,7 @@ fn pow2_mask(n: int) -> int {
     j - 1
 }
 
-fn posts_from_mask(width: int, height: int, opaque: Vec<int>) -> Picture {
+fn posts_from_mask(width: int, height: int, opaque: Vec<u8>) -> Picture {
     let mut colpost: Vec<int> = vec![0; width]
     let mut posts: Vec<int> = vec![]
     for x in 0..width {
@@ -238,7 +243,7 @@ fn posts_from_mask(width: int, height: int, opaque: Vec<int>) -> Picture {
         posts.push(-1)
     }
     let hm = if pow2_mask(height) + 1 == height { height - 1 } else { -1 }
-    let none: Vec<Vec<int>> = vec![]
+    let none: Vec<Vec<u8>> = vec![]
     Picture { width: width, height: height, left: 0, top: 0, widthmask: pow2_mask(width), heightmask: hm, cols: none, mcols: none, colpost: colpost, posts: posts }
 }
 
@@ -246,8 +251,8 @@ fn build_texture(w: Wad, g: Graphics, tex: TextureDef) -> Picture {
     let width = tex.width
     let height = tex.height
     let n = width * height
-    let mut pix: Vec<int> = vec![0; n + 512]
-    let mut opaque: Vec<int> = vec![0; n]
+    let mut pix: Vec<u8> = vec![0; n + 512]
+    let mut opaque: Vec<u8> = vec![0; n]
     for pr in tex.patches {
         let li = g.patch_lumps[pr.patch]
         if li < 0 { continue }
@@ -261,7 +266,7 @@ fn build_texture(w: Wad, g: Graphics, tex: TextureDef) -> Picture {
                 for i in 0..post.length {
                     let ty = y0 + i
                     if ty >= 0 && ty < height {
-                        pix[256 + col + ty] = w.buf.read_u8(post.data + i)
+                        pix[256 + col + ty] = w.buf.read_u8(post.data + i) as u8
                         opaque[col + ty] = 1
                     }
                 }
@@ -269,11 +274,11 @@ fn build_texture(w: Wad, g: Graphics, tex: TextureDef) -> Picture {
         }
     }
     let p = posts_from_mask(width, height, opaque)
-    let mut cols: Vec<Vec<int>> = vec![]
-    let mut mcols: Vec<Vec<int>> = vec![]
+    let mut cols: Vec<Vec<u8>> = vec![]
+    let mut mcols: Vec<Vec<u8>> = vec![]
     for x in 0..width {
-        let mut c: Vec<int> = vec![0; height]
-        let mut m: Vec<int> = vec![0; height + 16]
+        let mut c: Vec<u8> = vec![0; height]
+        let mut m: Vec<u8> = vec![0; height + 16]
         for y in 0..height {
             c[y] = pix[256 + x * height + y]
             m[8 + y] = c[y]
@@ -293,24 +298,24 @@ fn build_patch(w: Wad, li: int) -> Picture {
             if post.top + post.length > height { height = post.top + post.length }
         }
     }
-    let mut mcols: Vec<Vec<int>> = vec![]
+    let mut mcols: Vec<Vec<u8>> = vec![]
     let mut colpost: Vec<int> = vec![0; width]
     let mut posts: Vec<int> = vec![]
     for x in 0..width {
         colpost[x] = posts.len()
-        let mut m: Vec<int> = vec![0; height + 16]
+        let mut m: Vec<u8> = vec![0; height + 16]
         for post in patch.columns[x] {
             posts.push(post.top)
             posts.push(post.length)
             posts.push(8 + post.top)
             for i in 0..post.length {
-                m[8 + post.top + i] = w.buf.read_u8(post.data + i)
+                m[8 + post.top + i] = w.buf.read_u8(post.data + i) as u8
             }
         }
         posts.push(-1)
         mcols.push(m)
     }
-    let none: Vec<Vec<int>> = vec![]
+    let none: Vec<Vec<u8>> = vec![]
     Picture { width: width, height: height, left: patch.left, top: patch.top, widthmask: pow2_mask(width), heightmask: -1, cols: none, mcols: mcols, colpost: colpost, posts: posts }
 }
 
@@ -550,6 +555,9 @@ fn init_lights() {
 }
 
 pub fn setup(w: Wad, g: Graphics, mut lv: Level) {
+    sprite_defs = vec![]
+    sprite_pics = vec![]
+    sprite_lump_cache = vec![]
     let t0 = time::timer()
     cmap_rows = vec![]
     for m in 0..(g.colormap.len() / 256) {
@@ -569,7 +577,7 @@ pub fn setup(w: Wad, g: Graphics, mut lv: Level) {
     }
     let tex_slots = build_index(tex_names)
     let mut flat_names: Vec<string> = vec![]
-    let no_flat: Vec<int> = vec![]
+    let no_flat: Vec<u8> = vec![]
     flat_pix = vec![]
     for f in g.flats {
         flat_names.push(f.name)
@@ -616,8 +624,8 @@ pub fn setup(w: Wad, g: Graphics, mut lv: Level) {
         rm_light.push(s.light)
         let fresh: Vec<int> = vec![]
         sector_actors.push(fresh)
-        if fp >= 0 && flat_pix[fp].len() == 0 { flat_pix[fp] = gfx::flat_pixels(w, g.flats[fp]); nflat++ }
-        if cp >= 0 && flat_pix[cp].len() == 0 { flat_pix[cp] = gfx::flat_pixels(w, g.flats[cp]); nflat++ }
+        if fp >= 0 && flat_pix[fp].len() == 0 { flat_pix[fp] = gfx::flat_bytes(w, g.flats[fp]); nflat++ }
+        if cp >= 0 && flat_pix[cp].len() == 0 { flat_pix[cp] = gfx::flat_bytes(w, g.flats[cp]); nflat++ }
     }
     let sky = tex_pics[sky_tex]
     sky_lit = vec![]
@@ -744,6 +752,10 @@ pub fn setup(w: Wad, g: Graphics, mut lv: Level) {
         actors.push(Actor { x: x, y: y, z: z, angle: ang(0x20000000 * (t.angle / 45)), def: def, bright: k.bright, sector: sector })
         push_int(sector_actors[sector], actors.len() - 1)
     }
+    actor_old_x = vec![]; actor_old_y = vec![]; actor_old_z = vec![]
+    for actor in actors { actor_old_x.push(actor.x); actor_old_y.push(actor.y); actor_old_z.push(actor.z) }
+    interpolation = 65536
+    sprite_lump_cache = lump_pic
     println("render setup: {ntex} textures, {nflat} flats, {actors.len()} things ({skipped_things} unknown), {sprite_pics.len()} sprite patches, {time::elapsed(t0) * 1000.0} ms")
 }
 
@@ -936,7 +948,7 @@ fn check_plane(p: int, start: int, stop: int) -> int {
     n
 }
 
-fn draw_column(mut out: Vec<u8>, cmrow: Vec<u8>, col: Vec<int>, x: int, yl: int, yh: int, texturemid: int, iscale: int, mask: int, height: int) {
+fn draw_column(mut out: Vec<u8>, cmrow: Vec<u8>, col: Vec<u8>, x: int, yl: int, yh: int, texturemid: int, iscale: int, mask: int, height: int) {
     if yh >= yl {
         let mut frac = texturemid + (yl - 100) * iscale
         if mask >= 0 {
@@ -1488,10 +1500,11 @@ fn check_bbox(b: int) -> bool {
     true
 }
 
-fn project_sprite(a: Actor, lightrow: int) {
+fn project_sprite(a: Actor, lightrow: int, ax: int, ay: int, az: int) {
+    if a.def < 0 { return () }
     if num_vs >= 128 { return () }
-    let tr_x = a.x - viewx
-    let tr_y = a.y - viewy
+    let tr_x = ax - viewx
+    let tr_y = ay - viewy
     let gxt = tr_x.mul_shr(viewcos, 16)
     let gyt = 0 - tr_y.mul_shr(viewsin, 16)
     let tz = gxt - gyt
@@ -1504,7 +1517,7 @@ fn project_sprite(a: Actor, lightrow: int) {
     let def = sprite_defs[a.def]
     let mut rot = 0
     if def.rotate {
-        let an = point_to_angle(a.x, a.y)
+        let an = point_to_angle(ax, ay)
         rot = ang_sub(an + 0x90000000, a.angle) >> 29
     }
     let pi = def.pics[rot]
@@ -1519,11 +1532,11 @@ fn project_sprite(a: Actor, lightrow: int) {
     let v = num_vs
     num_vs++
     vs_scale[v] = xscale
-    vs_gx[v] = a.x
-    vs_gy[v] = a.y
-    vs_gz[v] = a.z
-    vs_gzt[v] = a.z + (pic.top << 16)
-    vs_texturemid[v] = a.z + (pic.top << 16) - viewz
+    vs_gx[v] = ax
+    vs_gy[v] = ay
+    vs_gz[v] = az
+    vs_gzt[v] = az + (pic.top << 16)
+    vs_texturemid[v] = az + (pic.top << 16) - viewz
     let vx1 = if x1 < 0 { 0 } else { x1 }
     vs_x1[v] = vx1
     vs_x2[v] = if x2 >= 320 { 319 } else { x2 }
@@ -1554,7 +1567,11 @@ fn add_sprites(sector: int) {
     if lightnum < 0 { lightnum = 0 }
     if lightnum > 15 { lightnum = 15 }
     for ai in sector_actors[sector] {
-        project_sprite(actors[ai], lightnum * 48)
+        let a = actors[ai]
+        let x = actor_old_x[ai] + (a.x - actor_old_x[ai]).mul_shr(interpolation, 16)
+        let y = actor_old_y[ai] + (a.y - actor_old_y[ai]).mul_shr(interpolation, 16)
+        let z = actor_old_z[ai] + (a.z - actor_old_z[ai]).mul_shr(interpolation, 16)
+        project_sprite(a, lightnum * 48, x, y, z)
     }
 }
 
@@ -2052,3 +2069,73 @@ pub fn write_ppm(path: string, pal: Vec<int>) -> Result<(), string> {
     for i in 0..192000 { out[start + i] = rgb[i] as u8 }
     fs::write_bytes(path, &out)
 }
+
+pub fn actor_at(x: int, y: int) -> int {
+    for i in 0..actors.len() { if actors[i].x == x && actors[i].y == y { return i } }
+    -1
+}
+pub fn move_actor(i: int, x: int, y: int, z: int, angle: int) {
+    if i < 0 { return () }
+    let old = actors[i].sector
+    let sector = sub_sector[point_in_subsector(x, y)]
+    if old != sector {
+        for k in 0..sector_actors[old].len() {
+            if sector_actors[old][k] == i { let _ = sector_actors[old].remove(k); break }
+        }
+        push_int(sector_actors[sector], i)
+    }
+    actors[i].x = x
+    actors[i].y = y
+    actors[i].z = z
+    actors[i].angle = angle
+    actors[i].sector = sector
+}
+pub fn actor_frame(i: int, frame: int) { if i >= 0 && frame >= 0 { actors[i].def = frame } }
+pub fn sprite_definition(w: Wad, name: string, frame: int) -> int {
+    find_sprite_def(w, w.find_lump("S_START"), w.find_lump("S_END"), name, frame, sprite_lump_cache)
+}
+pub fn picture(w: Wad, name: string) -> Picture {
+    let lump = w.find_lump(name)
+    if lump < 0 { empty_picture() } else { build_patch(w, lump) }
+}
+pub fn overlay(pic: Picture, left: int, top: int) {
+    for x in 0..pic.width {
+        let sx = left + x
+        if sx < 0 || sx >= 320 { continue }
+        let mut post = pic.colpost[x]
+        let mut y = pic.posts[post]
+        let pixels = pic.mcols[x]
+        while y >= 0 {
+            let count = pic.posts[post + 1]
+            let source = pic.posts[post + 2]
+            for j in 0..count {
+                let sy = top + y + j
+                if sy >= 0 && sy < 200 { fb[sy * 320 + sx] = pixels[source + j] as u8 }
+            }
+            post += 3
+            y = pic.posts[post]
+        }
+    }
+}
+pub fn crosshair() {
+    for d in -4..=4 {
+        if d > -2 && d < 2 { continue }
+        fb[100 * 320 + 160 + d] = 4
+        fb[(100 + d) * 320 + 160] = 4
+    }
+}
+pub fn damage_flash() {
+    for x in 0..320 { fb[x] = 176; fb[167 * 320 + x] = 176 }
+    for y in 0..168 { fb[y * 320] = 176; fb[y * 320 + 319] = 176 }
+}
+
+pub fn hide_actor(i: int) { if i >= 0 { actors[i].def = -1 } }
+
+pub fn begin_tic() {
+    for i in 0..actors.len() {
+        actor_old_x[i] = actors[i].x
+        actor_old_y[i] = actors[i].y
+        actor_old_z[i] = actors[i].z
+    }
+}
+pub fn set_interpolation(fraction: int) { interpolation = fraction }

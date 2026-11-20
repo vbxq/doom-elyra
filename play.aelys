@@ -62,6 +62,7 @@ let mut th_x: Vec<int> = vec![0]
 let mut th_y: Vec<int> = vec![0]
 let mut th_r: Vec<int> = vec![0]
 let mut num_solid = 0
+let mut ignored_solid = -1
 let mut skill_bit = 2
 let mut no_monsters = false
 
@@ -385,6 +386,15 @@ fn setup_things(lv: Level) {
 }
 
 pub fn init_level(mut lv: Level, skill: int, nomonsters: bool) {
+    d_live = vec![0; 32]
+    lf_live = vec![0; 16]
+    doors_opened = 0
+    lifts_started = 0
+    lines_crossed = 0
+    moves_tried = 0
+    slides = 0
+    use_down = false
+    ignored_solid = -1
     skill_bit = skill
     no_monsters = nomonsters
     setup_lines(lv)
@@ -516,6 +526,7 @@ fn block_lines(bx: int, by: int) -> bool {
 fn block_things(bx: int, by: int) -> bool {
     if bx < 0 || by < 0 || bx >= bm_w || by >= bm_h { return true }
     for t in th_blocks[by * bm_w + bx] {
+        if t == ignored_solid || th_r[t] <= 0 { continue }
         let bd = th_r[t] + 1048576
         if iabs(th_x[t] - tm_x) < bd && iabs(th_y[t] - tm_y) < bd {
             tm_blockline = -1
@@ -1062,3 +1073,63 @@ pub fn moves_count() -> int { moves_tried }
 pub fn slide_count() -> int { slides }
 pub fn sector_ceiling(s: int) -> int { s_ceil[s] }
 pub fn sector_floor(s: int) -> int { s_floor[s] }
+
+pub fn turn_view(delta: int) { pangle = (pangle + delta) & 0xFFFFFFFF }
+pub fn solid_at(x: int, y: int) -> int {
+    for i in 0..th_x.len() { if th_x[i] == x && th_y[i] == y { return i } }
+    -1
+}
+pub fn remove_solid(i: int) { if i >= 0 { th_r[i] = 0 } }
+pub fn move_solid(i: int, x: int, y: int, z: int) -> bool {
+    if i < 0 { return true }
+    if iabs(x - px) < (36 << 16) && iabs(y - py) < (36 << 16) { return false }
+    ignored_solid = i
+    let clear = check_position(x, y)
+    ignored_solid = -1
+    if !clear || tm_ceil - tm_floor < (56 << 16) || tm_floor - z > (24 << 16) { return false }
+    let old_block = ((th_y[i] - bm_oy) >> 23) * bm_w + ((th_x[i] - bm_ox) >> 23)
+    let new_bx = (x - bm_ox) >> 23
+    let new_by = (y - bm_oy) >> 23
+    if new_bx < 0 || new_by < 0 || new_bx >= bm_w || new_by >= bm_h { return false }
+    let new_block = new_by * bm_w + new_bx
+    if old_block != new_block {
+        for k in 0..th_blocks[old_block].len() {
+            if th_blocks[old_block][k] == i { let _ = th_blocks[old_block].remove(k); break }
+        }
+        push_int(th_blocks[new_block], i)
+    }
+    th_x[i] = x
+    th_y[i] = y
+    true
+}
+pub fn visible(x1: int, y1: int, z1: int, x2: int, y2: int, z2: int) -> bool {
+    let fx = (x1 >> 8) as float / 256.0
+    let fy = (y1 >> 8) as float / 256.0
+    let dx = ((x2 - x1) >> 8) as float / 256.0
+    let dy = ((y2 - y1) >> 8) as float / 256.0
+    let lx = if x1 < x2 { x1 } else { x2 }
+    let hx = if x1 > x2 { x1 } else { x2 }
+    let ly = if y1 < y2 { y1 } else { y2 }
+    let hy = if y1 > y2 { y1 } else { y2 }
+    validcount++
+    let vc = validcount
+    for bx in ((lx - bm_ox) >> 23)..=(((hx - bm_ox) >> 23)) {
+        for by in ((ly - bm_oy) >> 23)..=(((hy - bm_oy) >> 23)) {
+            if bx < 0 || by < 0 || bx >= bm_w || by >= bm_h { continue }
+            for l in bm_lists[by * bm_w + bx] {
+                if l_valid[l] == vc { continue }
+                l_valid[l] = vc
+                let t = seg_cross(l, fx, fy, dx, dy)
+                if t < 0.0 || t > 1.0 { continue }
+                let back = l_back[l]
+                if back < 0 { return false }
+                let front = l_front[l]
+                let bottom = if s_floor[front] > s_floor[back] { s_floor[front] } else { s_floor[back] }
+                let top = if s_ceil[front] < s_ceil[back] { s_ceil[front] } else { s_ceil[back] }
+                let z = z1 + ((z2 - z1) as float * t) as int
+                if z <= bottom || z >= top { return false }
+            }
+        }
+    }
+    true
+}

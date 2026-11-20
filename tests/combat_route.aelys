@@ -1,0 +1,21 @@
+use std::sys
+use std::io::{println}
+use engine
+use play
+use render
+use camera
+use combat
+engine::enable_gameplay()
+let g = engine::load(sys::arg(0).unwrap())
+let total = combat::alive()
+for frame in 0..700 {
+    camera::begin_tic()
+    if combat::health() > 0 { play::tic(25, 0, if frame % 140 < 35 { 640 } else { 0 }, frame % 35 == 0) }
+    combat::tick(frame % 3 != 0)
+    camera::draw(32768)
+    combat::draw_hud()
+}
+assert(combat::health() >= 0 && combat::health() <= 200, "health invariant")
+assert(combat::ammo() >= 0 && combat::ammo() <= 200, "ammo invariant")
+assert(combat::alive() <= total, "enemy invariant")
+println("PASS: 700 active movement/aim/fire/AI/interpolated-render frames; health {combat::health()} ammo {combat::ammo()} kills {combat::kills()}")

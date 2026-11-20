@@ -134,6 +134,11 @@ pub fn compose_texture(w: Wad, g: Graphics, tex: TextureDef) -> Vec<int> {
     pixels
 }
 
-pub fn flat_pixels(w: Wad, f: Flat) -> Vec<int> {
-    lump_bytes(w, f.lump)
+pub fn flat_bytes(w: Wad, f: Flat) -> Vec<u8> {
+    let lump = w.lumps[f.lump]
+    let mut pixels: Vec<u8> = vec![0; lump.size]
+    for i in 0..lump.size { pixels[i] = w.buf.read_u8(lump.filepos + i) as u8 }
+    pixels
 }
+
+pub fn flat_pixels(w: Wad, f: Flat) -> Vec<int> { lump_bytes(w, f.lump) }

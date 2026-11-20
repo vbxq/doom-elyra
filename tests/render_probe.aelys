@@ -1,0 +1,16 @@
+use std::sys
+use std::fs as fs
+use std::io::{println}
+use engine
+use render
+let g = engine::load(sys::arg(0).unwrap())
+let directory = sys::arg(1).unwrap()
+for frame in 0..5 {
+    while engine::tic_count() < frame * 350 { engine::run_tic() }
+    engine::draw_view()
+    let pixels = render::framebuffer()
+    match fs::write_bytes("{directory}/{frame}.bin", &pixels) {
+        Ok(_) => (),
+        Err(e) => { println(e); sys::exit(1) },
+    }
+}

@@ -10,9 +10,9 @@ parser.add_argument('--aelys', required=True)
 parser.add_argument('--jit', action='store_true')
 args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent
-env = dict(os.environ, DISPLAY=':99')
+env = dict(os.environ, DISPLAY=':99', SDL_AUDIODRIVER='dummy')
 
-def run(keys):
+def run(keys, mouse=0):
     proc = subprocess.Popen([args.aelys, 'run', *(['-ae.jit=on'] if args.jit else []), str(root / 'doom.aelys'), '--scale', '1'], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:
         window = None
@@ -29,6 +29,8 @@ def run(keys):
         time.sleep(0.3)
         for key in keys:
             subprocess.run(['xdotool', 'keydown', '--window', window, key], env=env, check=True)
+        if mouse:
+            subprocess.run(['xdotool', 'mousemove_relative', '--', str(mouse), '0'], env=env, check=True)
         time.sleep(0.7)
         for key in keys:
             subprocess.run(['xdotool', 'keyup', '--window', window, key], env=env, check=True)
@@ -42,16 +44,21 @@ def run(keys):
         assert escape.returncode == 0 or 'BadWindow' in escape.stderr, escape.stderr
         fixed = tuple(map(int, re.search(r'final fixed (-?\d+) (-?\d+) (-?\d+) (-?\d+)', output).groups()))
         moves = int(re.search(r'trymoves (\d+)', output).group(1))
-        return fixed, moves
+        ammo = int(re.search(r"combat health \d+ ammo (\d+)", output).group(1))
+        return fixed, moves, ammo
     finally:
         if proc.poll() is None:
             proc.kill()
             proc.communicate()
 
-idle, idle_moves = run([])
+idle, idle_moves, idle_ammo = run([])
 assert idle_moves == 0, f'idle player moved automatically: {idle_moves}'
-walk, walk_moves = run(['w'])
+walk, walk_moves, _ = run(['w'])
 assert walk[:2] != idle[:2] and walk_moves > 0, (idle, walk)
-turn, _ = run(['Right'])
+turn, _, _ = run(['Right'])
 assert turn[3] != idle[3], (idle, turn)
-print(f'PASS: SDL keyboard -> movement {idle[:2]} -> {walk[:2]}, rotation {idle[3]} -> {turn[3]}, idle stationary, Escape exits')
+aim, _, _ = run([], mouse=30)
+assert aim[3] != idle[3], (idle, aim)
+_, _, fired_ammo = run(['Control_L'])
+assert fired_ammo < idle_ammo, (idle_ammo, fired_ammo)
+print(f'PASS: SDL keyboard -> movement {idle[:2]} -> {walk[:2]}, rotation {idle[3]} -> {turn[3]}, idle stationary, mouse aims, Ctrl fires, Escape exits')

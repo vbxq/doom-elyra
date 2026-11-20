@@ -1,0 +1,75 @@
+use std::sys
+use std::io::{println}
+use engine
+use play
+use render
+use camera
+use combat
+use sound
+fn check(ok: bool, label: string) {
+    if !ok { println("FAIL {label}"); sys::exit(1) }
+}
+check(camera::blend(100, 200, 32768) == 150, "half-tic translation")
+check(camera::blend_angle(0xFFFFFF00, 0x100, 32768) == 0, "short angle wrap")
+engine::enable_gameplay()
+let g = engine::load(sys::arg(0).unwrap())
+check(combat::alive() > 0, "map enemies initialized")
+check(sound::play(0), "pistol audio decoded and queued")
+check(sound::play(2), "death audio resampled and queued")
+let before_kills = combat::alive()
+let enemy_x = combat::enemy_x(0)
+let enemy_y = combat::enemy_y(0)
+let enemy_z = combat::enemy_z(0) + (32 << 16)
+for hit in 0..10 {
+    if combat::enemy_health(0) <= 0 { break }
+    check(combat::shoot(enemy_x - (8 << 16), enemy_y, enemy_z, 0), "actual map enemy receives shot")
+}
+check(combat::enemy_health(0) <= 0 && combat::alive() == before_kills - 1, "actual map enemy dies and unlinks collision")
+let x = play::player_x()
+let y = play::player_y()
+let z = play::player_viewz()
+check(play::visible(x, y, z, x + 65536, y, z), "short clear ray")
+check(!play::visible(x, y, z, x, y + (4096 << 16), z), "wall occludes ray")
+combat::reset()
+let id = combat::spawn(x + (64 << 16), y, play::player_z(), 3004, -1, -1)
+check(combat::alive() == 1, "enemy spawned")
+check(combat::shoot(x, y, z, 0), "pistol hits aimed enemy")
+check(combat::enemy_health(id) < 20, "enemy takes damage")
+for i in 0..3 { let _ = combat::shoot(x, y, z, 0) }
+check(combat::alive() == 0 && combat::kills() == 1, "enemy killed")
+combat::reset()
+let other = combat::spawn(x + (64 << 16), y, play::player_z(), 3004, -1, -1)
+check(!combat::shoot(x, y, z, 0x80000000), "off-axis shot misses")
+let initial_health = combat::health()
+for i in 0..140 { combat::tick(false) }
+check(combat::health() < initial_health, "enemy attacks player")
+check(combat::enemy_x(other) < x + (64 << 16), "enemy pursues player")
+for i in 0..1200 { combat::tick(false) }
+check(combat::health() == 0, "player can die")
+combat::reset()
+let demon = combat::spawn(x + (128 << 16), y, play::player_z(), 3002, -1, -1)
+for i in 0..20 { combat::tick(false) }
+check(combat::health() == 100, "melee enemy cannot attack at range")
+combat::reset()
+check(combat::health() == 100 && combat::ammo() == 50, "restart restores player")
+combat::tick(true)
+check(combat::ammo() == 49, "shot consumes ammunition")
+combat::tick(true)
+check(combat::ammo() == 49, "fire cooldown")
+check(!combat::pickup(2011), "health pickup preserved at full health")
+check(combat::pickup(2007) && combat::ammo() == 59, "ammo pickup")
+check(combat::pickup(2018) && combat::armor() == 100, "armor pickup")
+combat::reset()
+let mut wall_y = y
+for distance in 64..512 step 8 {
+    if !play::visible(x, y, z, x, y + (distance << 16), z) { wall_y = y + (distance << 16); break }
+}
+check(wall_y != y, "test map contains a nearby blocking wall")
+let wall_enemy = combat::spawn(x, wall_y, play::player_z(), 3004, -1, -1)
+check(!combat::shoot(x, y, z, 0x40000000), "wall blocks bullet before nearby enemy")
+check(combat::enemy_health(wall_enemy) == 20, "wall-protected enemy takes no damage")
+for i in 0..140 { combat::tick(false) }
+check(combat::health() == 100, "enemy cannot attack through wall")
+let reloaded = engine::load(sys::arg(0).unwrap())
+check(combat::health() == 100 && combat::ammo() == 50 && combat::alive() > 0, "level reload restores actual game")
+println("PASS: camera interpolation/wrap; wall occlusion; aimed hit/miss; damage/death; enemy pursuit/attack; restart; ammunition/cooldown")
